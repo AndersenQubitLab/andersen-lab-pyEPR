@@ -15,6 +15,7 @@ from __future__ import print_function
 from functools import reduce
 
 import numpy as np
+import scipy as sp
 
 from .constants import Planck as h
 from .constants import fluxQ, hbar
@@ -28,6 +29,7 @@ except (ImportError, ModuleNotFoundError):
 
 __all__ = [ 'epr_numerical_diagonalization',
             'make_dispersive',
+            'black_box_hamiltonian_HO_basis',
             'black_box_hamiltonian',
             'black_box_hamiltonian_nq']
 
@@ -42,41 +44,122 @@ cos_approx = MatrixOps.cos_approx
 def epr_numerical_diagonalization(freqs, Ljs, ϕzpf,
              cos_trunc=8,
              fock_trunc=9,
+             flux=0,
+             basis='std',
              use_1st_order=False,
              return_H=False,
              non_linear_potential=None):
     '''
-    Numerical diagonalization for pyEPR. Ask Zlatko for details.
+    Numerical diagonalizaiton for pyEPR. Ask Zlatko for details.
 
     :param fs: (GHz, not radians) Linearized model, H_lin, normal mode frequencies in Hz, length M
     :param ljs: (Henries) junction linearized inductances in Henries, length J
-    :param fzpfs: (reduced) Reduced Zero-point fluctuation of the junction fluxes for each mode
+    :param fzpfs: (reduced) Reduced Zero-point fluctutation of the junction fluxes for each mode
                 across each junction, shape MxJ
 
     :return: Hamiltonian mode freq and dispersive shifts. Shifts are in MHz.
              Shifts have flipped sign so that down shift is positive.
     '''
-
     freqs, Ljs, ϕzpf = map(np.array, (freqs, Ljs, ϕzpf))
+    
     assert(all(freqs < 1E6)
            ), "Please input the frequencies in GHz. \N{nauseated face}"
     assert(all(Ljs < 1E-3)
            ), "Please input the inductances in Henries. \N{nauseated face}"
-
-    Hs = black_box_hamiltonian(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
-                               cos_trunc, fock_trunc, individual=use_1st_order,
-                               non_linear_potential = non_linear_potential)
+    
+    if basis == 'HO':
+        print('Using Full Cosine Potential')
+        Hs = black_box_hamiltonian_HO_basis(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
+                 fock_trunc, flux, individual=use_1st_order)
+    else:
+        print('Using taylor expansion')
+        Hs = black_box_hamiltonian(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
+                 cos_trunc, fock_trunc, individual=use_1st_order)
+    
     f_ND, χ_ND, _, _ = make_dispersive(
         Hs, fock_trunc, ϕzpf, freqs, use_1st_order=use_1st_order)
+    
     χ_ND = -1*χ_ND * 1E-6  # convert to MHz, and flip sign so that down shift is positive
 
     return (f_ND, χ_ND, Hs) if return_H else (f_ND, χ_ND)
 
+def black_box_hamiltonian_HO_basis(fs, ljs, fzpfs, fock_trunc=20, flux=0, individual=False):
+    r"""
+    :param fs: Linearized model, H_lin, normal mode frequencies in Hz, length N
+    :param ljs: junction linearized inductances in Henries, length M
+    :param fzpfs: Zero-point fluctutation of the junction fluxes for each mode across each junction,
+                 shape MxJ
+    :param flux: Dimensionless external flux bias in [0,1] that modifies the interior of the cos term of the Hamiltonian.
 
+    :return: Hamiltonian in units of Hz (i.e H / h)
+    All in SI units. The ZPF fed in are the generalized, not reduced, flux.
 
+    Description:
+     Takes the linear mode frequencies, $\omega_m$, and the zero-point fluctuations, ZPFs, and
+     builds the Hamiltonian matrix of $H_full$, assuming cos potential. It also takes the external
+     flux bias into account.
 
-def black_box_hamiltonian(fs, ljs, fzpfs, cos_trunc=5, fock_trunc=8, individual=False,
-                          non_linear_potential = None):
+     This method is made to analyse a single qubit, coupled to an arbitrary amount of harmonic oscillator-like modes.  
+    """ 
+    n_modes = len(fs)
+    njuncs = len(ljs)
+    fs, ljs, fzpfs = map(np.array, (fs, ljs, fzpfs))
+    ejs = fluxQ**2 / ljs
+    fjs = ejs / h
+    fzpfs = np.transpose(fzpfs)  # Take from MxJ  to JxM
+
+    assert np.isnan(fzpfs).any(
+    ) == False, "Phi ZPF has NAN, this is NOT allowed! Fix me. \n%s" % fzpfs
+    assert np.isnan(ljs).any(
+    ) == False, "Ljs has NAN, this is NOT allowed! Fix me."
+    assert np.isnan(
+        fs).any() == False, "freqs has NAN, this is NOT allowed! Fix me."
+    assert fzpfs.shape == (njuncs, n_modes), "incorrect shape for zpf array, {} not {}".format(
+        fzpfs.shape, (njuncs, n_modes))
+    assert fs.shape == (n_modes,), "incorrect number of mode frequencies"
+    assert ejs.shape == (njuncs,), "incorrect number of qubit frequencies"
+
+    def tensor_out(op, loc):
+        "Make operator <op> tensored with identities at locations other than <loc>"
+        op_list = [qutip.qeye(fock_trunc) for i in range(n_modes)]
+        op_list[loc] = op
+        return reduce(qutip.tensor, op_list)
+
+    def dot(ais, bis):
+        """
+        Dot product
+        """
+        return sum(ai*bi for ai, bi in zip(ais, bis))
+
+    a = qutip.destroy(fock_trunc)
+    ad = a.dag()
+    n = qutip.num(fock_trunc)
+    mode_fields = [tensor_out(a + ad, i) for i in range(n_modes)]
+    mode_ns = [tensor_out(n, i) for i in range(n_modes)]
+    linear_part = dot(fs, mode_ns)
+
+    nonlinear_part = 0
+
+    for j in range(njuncs):
+        phi_operator = 0
+        lin = 0
+        for i in range(n_modes):
+            print('ϕzpf mode',i,': ', fzpfs[j,i] / fluxQ)
+            phi_operator += 1j*fzpfs[j,i] / fluxQ * mode_fields[i]
+            lin += (fzpfs[j,i] / fluxQ) * mode_fields[i]
+        lin = 0.5*(lin**2)
+        exp_matrix_no_flux = phi_operator.expm()
+        exp_matrix = exp_matrix_no_flux * np.exp(1j * 2 * np.pi * flux)
+        cos_matrix = 0.5 * (exp_matrix + exp_matrix.dag())
+         
+        im_non_zero = True in np.imag(cos_matrix+lin) != 0            
+        if im_non_zero:      
+            print('Imaginary part of non linear part is not zero')
+        nonlinear_part += -fjs[j] * (cos_matrix+lin)    
+    
+    return linear_part + nonlinear_part
+
+def black_box_hamiltonian(fs, ljs, fzpfs, cos_trunc=5, fock_trunc=8, individual=False):
     r"""
     :param fs: Linearized model, H_lin, normal mode frequencies in Hz, length N
     :param ljs: junction linearized inductances in Henries, length M
@@ -145,14 +228,17 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
     Output:
         Return dressed mode frequencies, chis, chi prime, phi_zpf flux (not reduced), and linear frequencies
     Description:
-        Takes the Hamiltonian matrix `H` from bbq_hmt. It them finds the eigenvalues/eigenvectors and  assigns quantum numbers to them --- i.e., mode excitations,  such as, for instance, for three mode, :math:`|0,0,0\rangle` or :math:`|0,0,1\rangle`, which correspond to no excitations in any of the modes or one excitation in the 3rd mode, resp.    The assignment is performed based on the maximum overlap between the eigenvectors of H_full and H_lin.   If this crude explanation is confusing, let me know, I will write a more detailed one |:slightly_smiling_face:|
-        Based on the assignment of the excitations, the function returns the dressed mode frequencies :math:`\omega_m^\prime`, and the cross-Kerr matrix (including anharmonicities) extracted from the numerical diagonalization, as well as from 1st order perturbation theory.
+        Takes the Hamiltonian matrix `H` from bbq_hmt. It them finds the eigenvalues/eigenvectors and assigns quantum numbers to them --- i.e., mode excitations,  such as, for instance, for three mode, |0,0,0> or |0,0,1>, which correspond to no excitations in any of the modes or one excitation in the 3rd mode, resp.    The assignment is performed based on the maximum overlap between the eigenvectors of H_full and H_lin.   If this crude explanation is confusing, let me know, I will write a more detailed one :slightly_smiling_face:
+        Based on the assignment of the excitations, the function returns the dressed mode frequencies $\omega_m^\prime$, and the cross-Kerr matrix (including anharmonicities) extracted from the numerical diagonalization, as well as from 1st order perturbation theory.
         Note, the diagonal of the CHI matrix is directly the anharmonicity term.
+
+        This is a modified method that works for a single qubit, with arbirtrary harmonic oscillator-like modes
     """
+    
     if hasattr(H, '__len__'):  # is it an array / list?
         [H_lin, H_nl] = H
         H = H_lin + H_nl
-    else:  # make sure its a quanutm object
+    else:  # make sure its a quantum object
         assert type(
             H) == qutip.qobj.Qobj, "Please pass in either a list of Qobjs or Qobj for the Hamiltonian"
 
@@ -161,98 +247,168 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
     print("Finished the diagonalization")
     evals -= evals[0]
 
-    N = int(np.log(H.shape[0]) / np.log(fock_trunc))    # number of modes
+    N = int(np.log(H.shape[0]) / np.log(fock_trunc))  # number of modes
     assert H.shape[0] == fock_trunc ** N
-
-    def fock_state_on(d):
-        ''' d={mode number: # of photons} '''
-        return qutip.tensor(*[qutip.basis(fock_trunc, d.get(i, 0)) for i in range(N)])  # give me the value d[i]  or 0 if d[i] does not exist
-
-    if use_1st_order:
-        num_modes = N
-        print("Using 1st O")
-
-        def multi_index_2_vector(d, num_modes, fock_trunc):
-            return tensor([basis(fock_trunc, d.get(i, 0)) for i in range(num_modes)])
-            '''this function creates a vector representation a given fock state given the data for excitations per
-                        mode of the form d={mode number: # of photons}'''
-
-        def find_multi_indices(fock_trunc):
-            multi_indices = [{ind: item for ind, item in enumerate([i, j, k])} for i in range(fock_trunc)
-                             for j in range(fock_trunc)
-                             for k in range(fock_trunc)]
-            return multi_indices
-            '''this function generates all possible multi-indices for three modes for a given fock_trunc'''
-
-        def get_expect_number(left, middle, right):
-            return (left.dag()*middle*right).data.toarray()[0, 0]
-            '''this function calculates the expectation value of an operator called "middle" '''
-
-        def get_basis0(fock_trunc, num_modes):
-            multi_indices = find_multi_indices(fock_trunc)
-            basis0 = [multi_index_2_vector(
-                multi_indices[i], num_modes, fock_trunc) for i in range(len(multi_indices))]
-            evalues0 = [get_expect_number(v0, H_lin, v0).real for v0 in basis0]
-            return multi_indices, basis0, evalues0
-            '''this function creates a basis of fock states and their corresponding eigenvalues'''
-
-        def closest_state_to(vector0):
-
-            def PT_on_vector(original_vector, original_basis, pertub, energy0, evalue):
-                new_vector = 0 * original_vector
-                for i in range(len(original_basis)):
-                    if (energy0[i]-evalue) > 1e-3:
-                        new_vector += ((original_basis[i].dag()*H_nl*original_vector).data.toarray()[
-                                       0, 0])*original_basis[i]/(evalue-energy0[i])
-                    else:
-                        pass
-                return (new_vector + original_vector)/(new_vector + original_vector).norm()
-                '''this function calculates the normalized vector with the first order correction term
-                   from the non-linear hamiltonian '''
-
-            [multi_indices, basis0, evalues0] = get_basis0(
-                fock_trunc, num_modes)
-            evalue0 = get_expect_number(vector0, H_lin, vector0)
-            vector1 = PT_on_vector(vector0, basis0, H_nl, evalues0, evalue0)
-
-            index = np.argmax([(vector1.dag() * evec).norm()
-                               for evec in evecs])
-            return evals[index], evecs[index]
+    
+    if N == 1:
+        f1s = [evals[1] - evals[0]]
+        chis = [(evals[2] - evals[1]) - (evals[1] - evals[0])]
 
     else:
-        def closest_state_to(s):
-            def distance(s2):
-                return (s.dag() * s2[1]).norm()
-            return max(zip(evals, evecs), key=distance)
+        def tensor_out(op, loc):
+            "Make operator <op> tensored with identities at locations other than <loc>"
+            op_list = [qutip.qeye(fock_trunc) for i in range(N)]
+            op_list[loc] = op
+            return reduce(qutip.tensor, op_list)
 
-    f1s = [closest_state_to(fock_state_on({i: 1}))[0] for i in range(N)]
-    chis = [[0]*N for _ in range(N)]
-    chips = [[0]*N for _ in range(N)]
-    for i in range(N):
-        for j in range(i, N):
-            d = {k: 0 for k in range(N)}       # put 0 photons in each mode (k)
-            d[i] += 1
-            d[j] += 1
-            # load ith mode and jth mode with 1 photon
-            fs = fock_state_on(d)
-            ev, evec = closest_state_to(fs)
-            chi = (ev - (f1s[i] + f1s[j]))
-            chis[i][j] = chi
-            chis[j][i] = chi
+        def fock_state_on(d):
+            ''' d={mode number: # of photons} '''
+            return qutip.tensor(*[qutip.basis(fock_trunc, d.get(i, 0)) for i in range(N)])  # give me the value d[i] or 0 if d[i] does not exist
 
-            if chi_prime:
-                d[j] += 1
-                fs = fock_state_on(d)
-                ev, evec = closest_state_to(fs)
-                chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
-                chips[i][j] = chip
-                chips[j][i] = chip
+        if use_1st_order:
+            num_modes = N
+            print("Using 1st O")
+
+            def multi_index_2_vector(d, num_modes, fock_trunc):
+                return tensor([basis(fock_trunc, d.get(i, 0)) for i in range(num_modes)])
+                '''this function creates a vector representation a given fock state given the data for excitations per
+                            mode of the form d={mode number: # of photons}'''
+
+            def find_multi_indices(fock_trunc):
+                multi_indices = [{ind: item for ind, item in enumerate([i, j, k])} for i in range(fock_trunc)
+                                for j in range(fock_trunc)
+                                for k in range(fock_trunc)]
+                return multi_indices
+                '''this function generates all possible multi-indices for three modes for a given fock_trunc'''
+
+            def get_expect_number(left, middle, right):
+                return (left.dag()*middle*right).data.toarray()[0, 0]
+                '''this function calculates the expectation value of an operator called "middle" '''
+
+            def get_basis0(fock_trunc, num_modes):
+                multi_indices = find_multi_indices(fock_trunc)
+                basis0 = [multi_index_2_vector(
+                    multi_indices[i], num_modes, fock_trunc) for i in range(len(multi_indices))]
+                evalues0 = [get_expect_number(v0, H_lin, v0).real for v0 in basis0]
+                return multi_indices, basis0, evalues0
+                '''this function creates a basis of fock states and their corresponding eigenvalues'''
+
+            def closest_state_to(vector0):
+
+                def PT_on_vector(original_vector, original_basis, pertub, energy0, evalue):
+                    new_vector = 0 * original_vector
+                    for i in range(len(original_basis)):
+                        if (energy0[i]-evalue) > 1e-3:
+                            new_vector += ((original_basis[i].dag()*H_nl*original_vector).data.toarray()[
+                                        0, 0])*original_basis[i]/(evalue-energy0[i])
+                        else:
+                            pass
+                    return (new_vector + original_vector)/(new_vector + original_vector).norm()
+                    '''this function calculates the normalized vector with the first order correction term
+                    from the non-linear hamiltonian '''
+
+                [multi_indices, basis0, evalues0] = get_basis0(
+                    fock_trunc, num_modes)
+                evalue0 = get_expect_number(vector0, H_lin, vector0)
+                vector1 = PT_on_vector(vector0, basis0, H_nl, evalues0, evalue0)
+
+                index = np.argmax([(vector1.dag() * evec).norm()
+                                for evec in evecs])
+                return evals[index], evecs[index]
+
+        else:
+            def closest_state_to(s):
+                def distance(s2):
+                    return (s.dag() * s2[1]).norm()
+                return max(zip(evals, evecs), key=distance)
+        
+        fzpfs_shape = fzpfs.shape
+        if fzpfs_shape[0] == 1:
+            print('Single junctions -- assuming single qubit mode')
+            qubit_mode_ind = int(np.argmax(fzpfs[:,0]))  # find qubit mode
+            N_HO = [i for i in range(N) if i != qubit_mode_ind]  # harmonic oscillator modes indices
+
+            psi_0 = evecs[0]  # save ground state |0,0,0>
+            rho_0 = psi_0.ptrace(N_HO)  # ground state density matrix traced over all resonator like modes
+
+            # Define list with all harmonic mode creation operator
+            f_qubit = [[],[]]
+            a_m = [[0] for _ in range(N)]
+            for i in N_HO:
+                a_m[i] = tensor_out(qutip.create(fock_trunc),i)
+
+            # Save the modes and frequencies that correspond to fluxonium excitations.
+            for i in range(fock_trunc):
+                distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr()
+                if distance > 0.9:
+                    f_qubit[0].append(evals[i])
+                    f_qubit[1].append(evecs[i])
+
+            # Determine 0-1 frequencies for each mode
+            f1s = [[0] for _ in range(N)]
+            for i in range(N):
+                if i == qubit_mode_ind:
+                    f1s[i] = f_qubit[0][1] - f_qubit[0][0]
+                else:
+                    f1s[i] = closest_state_to(a_m[i]*psi_0)[0]
+
+
+            chis = [[0]*N for _ in range(N)]
+            chips = [[0]*N for _ in range(N)]
+
+            for i in range(N):
+                for j in range(i, N):
+                    if i == qubit_mode_ind and j == qubit_mode_ind:
+                        fs = f_qubit[1][2]
+                    elif i == qubit_mode_ind or j == qubit_mode_ind:
+                        if i == qubit_mode_ind:
+                            fs = a_m[j]*f_qubit[1][1]
+                        else:
+                            fs = a_m[i]*f_qubit[1][1]
+                    else:
+                        fs = a_m[i]*a_m[j]*psi_0
+
+                    ev, evec = closest_state_to(fs)
+                    chi = (ev - (f1s[i] + f1s[j]))
+                    chis[i][j] = chi
+                    chis[j][i] = chi
+
+                    if chi_prime:
+                        d[j] += 1
+                        fs = fock_state_on(d)
+                        ev, evec = closest_state_to(fs)
+                        chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
+                        chips[i][j] = chip
+                        chips[j][i] = chip
+        else:
+            print('Multiple junctions -- assuming transmons/harmonics oscillators only')
+            f1s = [closest_state_to(fock_state_on({i: 1}))[0] for i in range(N)]
+            chis = [[0] * N for _ in range(N)]
+            chips = [[0] * N for _ in range(N)]
+            for i in range(N):
+                for j in range(i, N):
+                    d = {k: 0 for k in range(N)}  # put 0 photons in each mode (k)
+                    d[i] += 1
+                    d[j] += 1
+                    # load ith mode and jth mode with 1 photon
+                    fs = fock_state_on(d)
+                    ev, evec = closest_state_to(fs)
+                    chi = (ev - (f1s[i] + f1s[j]))
+                    chis[i][j] = chi
+                    chis[j][i] = chi
+
+                    if chi_prime:
+                        d[j] += 1
+                        fs = fock_state_on(d)
+                        ev, evec = closest_state_to(fs)
+                        chip = (ev - (f1s[i] + 2 * f1s[j]) - 2 * chis[i][j])
+                        chips[i][j] = chip
+                        chips[j][i] = chip
 
     if chi_prime:
         return np.array(f1s), np.array(chis), np.array(chips), np.array(fzpfs), np.array(f0s)
     else:
         return np.array(f1s), np.array(chis), np.array(fzpfs), np.array(f0s)
-
 
 def black_box_hamiltonian_nq(freqs, zmat, ljs, cos_trunc=6, fock_trunc=8, show_fit=False):
     """
