@@ -79,11 +79,11 @@ def epr_numerical_diagonalization(freqs, Ljs, ϕzpf,
     f_ND, χ_ND, _, _ = make_dispersive(
         Hs, fock_trunc, ϕzpf, freqs, use_1st_order=use_1st_order)
     
-    χ_ND = -1*χ_ND * 1E-6  # convert to MHz, and flip sign so that down shift is positive
+    χ_ND = χ_ND * 1E-6  # convert to MHz
 
     return (f_ND, χ_ND, Hs) if return_H else (f_ND, χ_ND)
 
-def black_box_hamiltonian_HO_basis(fs, ljs, fzpfs, fock_trunc=20, flux=0, individual=False):
+def black_box_hamiltonian_HO_basis(fs, ljs, fzpfs, fock_trunc=20, flux=0, individual=False, non_linear_potential = None):
     r"""
     :param fs: Linearized model, H_lin, normal mode frequencies in Hz, length N
     :param ljs: junction linearized inductances in Henries, length M
@@ -159,7 +159,8 @@ def black_box_hamiltonian_HO_basis(fs, ljs, fzpfs, fock_trunc=20, flux=0, indivi
     
     return linear_part + nonlinear_part
 
-def black_box_hamiltonian(fs, ljs, fzpfs, cos_trunc=5, fock_trunc=8, individual=False):
+def black_box_hamiltonian(fs, ljs, fzpfs, cos_trunc=5, fock_trunc=8,
+                          individual=False, non_linear_potential = None):
     r"""
     :param fs: Linearized model, H_lin, normal mode frequencies in Hz, length N
     :param ljs: junction linearized inductances in Henries, length M
@@ -247,7 +248,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
     print("Finished the diagonalization")
     evals -= evals[0]
 
-    N = int(np.log(H.shape[0]) / np.log(fock_trunc))  # number of modes
+    N = int(np.round(np.log(H.shape[0])/np.log(fock_trunc)))  # number of modes
     assert H.shape[0] == fock_trunc ** N
     
     if N == 1:
@@ -323,7 +324,8 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 return max(zip(evals, evecs), key=distance)
         
         fzpfs_shape = fzpfs.shape
-        if fzpfs_shape[0] == 1:
+        print(fzpfs_shape)
+        if fzpfs_shape[1] == 1:
             print('Single junctions -- assuming single qubit mode')
             qubit_mode_ind = int(np.argmax(fzpfs[:,0]))  # find qubit mode
             N_HO = [i for i in range(N) if i != qubit_mode_ind]  # harmonic oscillator modes indices

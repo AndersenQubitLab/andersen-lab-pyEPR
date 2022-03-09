@@ -659,6 +659,8 @@ class QuantumAnalysis(object):
 
         # reduce matrices to only include certain modes/junctions
         if junctions is not None:
+            print(Ljs)
+            print(junctions)
             Ljs = Ljs[junctions, ]
             PJ = PJ[:, junctions]
             SJ = SJ[:, junctions]
@@ -687,8 +689,8 @@ class QuantumAnalysis(object):
                                                           PHI_zpf,
                                                           cos_trunc=cos_trunc,
                                                           fock_trunc=fock_trunc,
-                                                          flux = flux,
-                                                          basis = basis)
+                                                          flux=flux,
+                                                          basis=basis)
         else:
             f1_ND, CHI_ND = None, None
 
@@ -998,7 +1000,7 @@ class QuantumAnalysis(object):
         If you provide m and n as integers or mode labels, then the chi between these modes will
         be returned as a pandas Series.
         """
-        label = 'chi_O1' if numeric else 'chi_ND'
+        label = 'chi_ND' if numeric else 'chi_O1'
         df = pd.concat(self.results.vs_variations(
             label, vs=swp_variable, variations=variations),
             names=[swp_variable])
