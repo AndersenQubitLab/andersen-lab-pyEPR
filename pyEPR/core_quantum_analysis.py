@@ -52,7 +52,7 @@ class HamiltonianResultsContainer(OrderedDict):
 
     def __init__(self, dict_file=None, data_dir=None):
         """ input:
-           dict file - 1. ethier None to create an empty results hamiltonian as
+           dict file - 1. either None to create an empty results hamiltonian as
                        as was done in the original code
 
                        2. or a string with the name of the file where the file of the
@@ -618,16 +618,17 @@ class QuantumAnalysis(object):
                 None defaults to analysing all modes
 
         Returns:
-            dict: Dictionary containing at least the following:
-                * f_0 [MHz]: Eigenmode frequencies computed by HFSS; i.e., linear freq returned in GHz
-                * f_1 [MHz]: Dressed mode frequencies (by the non-linearity; e.g., Lamb shift, etc. ).
-                  Result based on 1st order perturbation theory on the 4th order expansion of the cosine.
-                * f_ND [MHz]: Numerical diagonalization result of dressed mode frequencies.
-                  only available if `cos_trunc` and  `fock_trunc` are set (non None).
-                * chi_O1 [MHz]: Analytic expression for the chis based on a cos trunc to 4th order, and using 1st
-                  order perturbation theory. Diag is anharmonicity, off diag is full cross-Kerr.
-                * chi_ND [MHz]: Numerically diagonalized chi matrix. Diag is anharmonicity, off diag is full
-                  cross-Kerr.
+        ----------------
+            f_0 [MHz]    : Eigenmode frequencies computed by HFSS; i.e., linear freq returned in GHz
+            f_1 [MHz]    : Dressed mode frequencies (by the non-linearity; e.g., Lamb shift, etc. ).
+                           If numerical diagonalization is run, then we return the numerically diagonalized
+                           frequencies, otherwise, use 1st order perturbation theory on the 4th order
+                           expansion of the cosine.
+            f_ND [MHz]   : Numerical diagonalization
+            chi_O1 [MHz] : Analytic expression for the chis based on a cos trunc to 4th order, and using 1st
+                           order perturbation theory. Diag is anharmonicity, off diag is full cross-Kerr.
+            chi_ND [MHz] : Numerically diagonalized chi matrix. Diag is anharmonicity, off diag is full
+                           cross-Kerr.
         '''
         
         # ensuring proper matrix dimensionality when slicing
@@ -717,12 +718,15 @@ class QuantumAnalysis(object):
         try:
             result['Q_coupling'] = self.Qm_coupling[variation][self.Qm_coupling[variation].columns[junctions]][modes]#TODO change the columns to junctions
         except:
-             result['Q_coupling'] = self.Qm_coupling[variation]
+            result['Q_coupling'] = self.Qm_coupling[variation]
         
         try:
             result['Qs'] = self.Qs[variation][self.PM[variation].columns[junctions]][modes] #TODO change the columns to junctions
         except:
-             result['Qs'] = self.Qs[variation][modes]
+            result['Qs'] = self.Qs[variation][modes]
+
+        result['sol'] = self.sols[variation]
+
         result['fock_trunc'] = fock_trunc
         result['cos_trunc'] = cos_trunc
         result['flux'] = flux
@@ -740,7 +744,8 @@ class QuantumAnalysis(object):
 
     def full_report_variations(self, var_list: list=None):
         """see full_variation_report"""
-        if var_list is None: var_list =self.variations
+        if var_list is None:
+            var_list = self.variations
         for variation in var_list: 
             self.full_variation_report(variation)
     

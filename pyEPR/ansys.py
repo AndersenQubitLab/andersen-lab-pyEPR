@@ -592,7 +592,7 @@ class HfssProject(COMWrapper):
         """Create a new driven model design
 
         Args:
-            name (str): Name of driven modal design    
+            name (str): Name of driven modal design
         """
         return self.new_design(name, "DrivenModal")
 
@@ -666,7 +666,7 @@ class HfssDesign(COMWrapper):
         self._modeler.ExportModelImageToFile(
             str(path),
             0,
-            0,  # can be 0 For the default, use 0, 0. For higher resolution, set desired <width> and <height>, for example for 8k export as: 7680, 4320. 
+            0,  # can be 0 For the default, use 0, 0. For higher resolution, set desired <width> and <height>, for example for 8k export as: 7680, 4320.
             [
                 "NAME:SaveImageParams", "ShowAxis:=", "True", "ShowGrid:=",
                 "True", "ShowRuler:=", "True", "ShowRegion:=", "Default",
@@ -715,6 +715,8 @@ class HfssDesign(COMWrapper):
             return HfssEMSetup(self, name)
         elif self.solution_type == "DrivenModal":
             return HfssDMSetup(self, name)
+        elif self.solution_type == "DrivenTerminal":
+            return HfssDTSetup(self, name)
         elif self.solution_type == "Q3D":
             return AnsysQ3DSetup(self, name)
 
@@ -764,6 +766,26 @@ class HfssDesign(COMWrapper):
             pct_refinement, "IsEnabled:=", True, "BasisOrder:=", basis_order
         ])
         return HfssDMSetup(self, name)
+
+    def create_dt_setup(self,
+                        freq_ghz=1,
+                        name="Setup",
+                        max_delta_s=0.1,
+                        max_passes=10,
+                        min_passes=1,
+                        min_converged=1,
+                        pct_refinement=30,
+                        basis_order=-1):
+
+        name = increment_name(name, self.get_setup_names())
+        self._setup_module.InsertSetup("HfssDriven", [
+            "NAME:" + name, "Frequency:=",
+            str(freq_ghz) + "GHz", "MaxDeltaS:=", max_delta_s,
+            "MaximumPasses:=", max_passes, "MinimumPasses:=", min_passes,
+            "MinimumConvergedPasses:=", min_converged, "PercentRefinement:=",
+            pct_refinement, "IsEnabled:=", True, "BasisOrder:=", basis_order
+        ])
+        return HfssDTSetup(self, name)
 
     def create_em_setup(self,
                         name="Setup",
@@ -1331,6 +1353,11 @@ class HfssDMSetup(HfssSetup):
     def get_solutions(self):
         return HfssDMDesignSolutions(self, self.parent._solutions)
 
+class HfssDTSetup(HfssDMSetup):
+
+    def get_solutions(self):
+        return HfssDTDesignSolutions(self, self.parent._solutions)
+
 
 class HfssEMSetup(HfssSetup):
     """
@@ -1703,9 +1730,11 @@ class HfssEMDesignSolutions(HfssDesignSolutions):
         pass_name: AdaptivePass, LastAdaptive
 
         Example
-        ------------------------------------------------------
+        -------
         Example plot for a single variation all pass converge of mode freq
-        .. code-block python
+
+        .. code-block:: python
+
             ycomp = [f"re(Mode({i}))" for i in range(1,1+epr_hfss.n_modes)]
             params = ["Pass:=", ["All"]]+variation
             setup.create_report("Freq. vs. pass", "Pass", ycomp, params, pass_name='AdaptivePass')
@@ -1724,6 +1753,8 @@ class HfssEMDesignSolutions(HfssDesignSolutions):
 class HfssDMDesignSolutions(HfssDesignSolutions):
     pass
 
+class HfssDTDesignSolutions(HfssDesignSolutions):
+    pass
 
 class HfssQ3DDesignSolutions(HfssDesignSolutions):
     pass
@@ -1834,11 +1865,13 @@ class Optimetrics(COMWrapper):
     Optimetrics script commands executed by the "Optimetrics" module.
 
     Example use:
-    .. code-block python
-            opti = Optimetrics(pinfo.design)
-            names = opti.get_setup_names()
-            print('Names of optimetrics: ', names)
-            opti.solve_setup(names[0])
+
+    .. code-block:: python
+
+        opti = Optimetrics(pinfo.design)
+        names = opti.get_setup_names()
+        print('Names of optimetrics: ', names)
+        opti.solve_setup(names[0])
 
     Note that running optimetrics requires the license for Optimetrics by Ansys.
     """
@@ -1881,50 +1914,157 @@ class Optimetrics(COMWrapper):
                      solve_with_copied_mesh_only=True,
                      setup_type='parametric'):
         """
-        Inserts a new parametric setup.
-
-
-        For  type_='linear_step' swp_params is start, stop, step:
-             swp_params = ("12.8nH" "13.6nH", "0.2nH")
+        Inserts a new parametric setup of one variable. Either with sweep
+        definition or from file.
+        
+        *Synchronized* sweeps (more than one variable changing at once)
+        can be implemented by giving a list of variables to ``variable``
+        and corresponding lists to ``swp_params`` and ``swp_type``.
+        The lengths of the sweep types should match (excluding single value).
 
         Corresponds to ui access:
-            Right-click the Optimetrics folder in the project tree,
-            and then click Add> Parametric on the shortcut menu.
+        Right-click the Optimetrics folder in the project tree, and then click
+        Add> Parametric on the shortcut menu.
+
+        Ansys provides six sweep definitions types specified using the swp_type
+        variable.
+
+        Sweep type definitions:
+
+        - 'single_value'
+            Specify a single value for the sweep definition.
+        - 'linear_step'
+            Specify a linear range of values with a constant step size.
+        - 'linear_count'
+            Specify a linear range of values and the number, or count of points
+            within this range.
+        - 'decade_count'
+            Specify a logarithmic (base 10) series of values, and the number of
+            values to calculate in each decade.
+        - 'octave_count'
+            Specify a logarithmic (base 2) series of values, and the number of
+            values to calculate in each octave.
+        - 'exponential_count'
+            Specify an exponential (base e) series of values, and the number of
+            values to calculate.
+
+        For swp_type='single_value' swp_params is the single value.
+
+        For swp_type='linear_step' swp_params is start, stop, step:
+            swp_params = ("12.8nH", "13.6nH", "0.2nH")
+        
+        All other types swp_params is start, stop, count:
+            swp_params = ("12.8nH", "13.6nH", 4)
+            The definition of count varies amongst the available types.
+
+        For Decade count and Octave count, the Count value specifies the number
+        of points to calculate in every decade or octave. For Exponential count,
+        the Count value is the total number of points. The total number of
+        points includes the start and stop values.
+
+        For parametric from file, setup_type='parametric_file', pass in a file
+        name and path to swp_params like "C:\\test.csv" or "C:\\test.txt" for
+        example.
+
+        Example csv formatting:
+        *,Lj_qubit
+        1,12.2nH
+        2,9.7nH
+        3,10.2nH
+
+        See Ansys documentation for additional formatting instructions.
         """
         setup_name = setup_name or self.design.get_setup_names()[0]
         print(
             f"Inserting optimetrics setup `{name}` for simulation setup: `{setup_name}`"
         )
 
-        if setup_type != 'parametric':
-            raise NotImplementedError()
+        if setup_type == 'parametric':
 
-        if swp_type == 'linear_step':
-            assert len(swp_params) == 3
-            # e.g., "LIN 12.8nH 13.6nH 0.2nH"
-            swp_str = f"LIN {swp_params[0]} {swp_params[1]} {swp_params[2]}"
+            type_map = {
+                'linear_count': 'LINC',
+                'decade_count': 'DEC',
+                'octave_count': 'OCT',
+                'exponential_count': 'ESTP',
+            }
+            valid_swp_types = {'single_value', 'linear_step'} | set(type_map.keys())
+
+            if isinstance(variable, Iterable) and not isinstance(variable, str):
+                # synchronized sweep, check that data is in correct format
+                assert len(swp_params) == len(swp_type) == len(variable), \
+                    'Incorrect swp_params or swp_type format for synchronised sweep.'
+                synchronize = True
+            else:
+                # convert all to lists as we can reuse same code for synchronized
+                swp_type = [swp_type]
+                swp_params = [swp_params]
+                variable = [variable]
+                synchronize = False
+
+            if any(e not in valid_swp_types for e in swp_type):
+                raise NotImplementedError()
+            else:
+                swp_str = list()
+                for i, e in enumerate(swp_type):
+                    if e == 'single_value':
+                        # Single takes string of single variable no swp_type_name
+                        swp_str.append(f"{swp_params[i]}")
+                    else:
+                        # correct number of inputs
+                        assert len(swp_params[i]) == 3, "Incorrect number of sweep parameters."
+
+                        # Not checking for compatible unit types
+                        if e == 'linear_step':
+                            swp_type_name = "LIN"
+                        else:
+                            # counts needs to be an integer number
+                            assert isinstance(swp_params[i][2], int), "Count must be integer."
+
+                            swp_type_name = type_map[e]
+
+                        # prepare the string to pass to Ansys
+                        swp_str.append(f"{swp_type_name} {swp_params[i][0]} {swp_params[i][1]} {swp_params[i][2]}")
+
+            self._optimetrics.InsertSetup("OptiParametric", [
+                f"NAME:{name}", "IsEnabled:=", True,
+                [
+                    "NAME:ProdOptiSetupDataV2",
+                    "SaveFields:=",
+                    save_fields,
+                    "CopyMesh:=",
+                    copy_mesh,
+                    "SolveWithCopiedMeshOnly:=",
+                    solve_with_copied_mesh_only,
+                ], ["NAME:StartingPoint"], "Sim. Setups:=", [setup_name],
+                [
+                    "NAME:Sweeps",
+                    *[[
+                        "NAME:SweepDefinition", "Variable:=", var_name, "Data:=",
+                        swp, "OffsetF1:=", False, "Synchronize:=", int(synchronize)
+                    ] for var_name, swp in zip(variable, swp_str)]
+                ], ["NAME:Sweep Operations"], ["NAME:Goals"]
+            ])
+        elif setup_type == 'parametric_file':
+            # Uses the file name as the swp_params
+            filename = swp_params
+
+            self._optimetrics.ImportSetup("OptiParametric",
+                [
+                f"NAME:{name}",
+                filename,
+                ])
+            self._optimetrics.EditSetup(f"{name}",
+                [
+                    f"NAME:{name}",
+            		[
+            			"NAME:ProdOptiSetupDataV2",
+            			"SaveFields:="		, save_fields,
+            			"CopyMesh:="		, copy_mesh,
+            			"SolveWithCopiedMeshOnly:=", solve_with_copied_mesh_only,
+            		],
+            ])
         else:
             raise NotImplementedError()
-
-        self._optimetrics.InsertSetup("OptiParametric", [
-            f"NAME:{name}", "IsEnabled:=", True,
-            [
-                "NAME:ProdOptiSetupDataV2",
-                "SaveFields:=",
-                save_fields,
-                "CopyMesh:=",
-                copy_mesh,
-                "SolveWithCopiedMeshOnly:=",
-                solve_with_copied_mesh_only,
-            ], ["NAME:StartingPoint"], "Sim. Setups:=", [setup_name],
-            [
-                "NAME:Sweeps",
-                [
-                    "NAME:SweepDefinition", "Variable:=", variable, "Data:=",
-                    swp_str, "OffsetF1:=", False, "Synchronize:=", 0
-                ]
-            ], ["NAME:Sweep Operations"], ["NAME:Goals"]
-        ])
 
 
 class HfssModeler(COMWrapper):
