@@ -350,7 +350,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 # and eigenstate associated with fluxonium excitations in the f_qubit list.
             for i in range(fock_trunc): 
                 distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-                if distance > 0.9:
+                if distance > 0.8:
                     f_qubit[0].append(evals[i])
                     f_qubit[1].append(evecs[i])
                     
@@ -372,32 +372,49 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             # Determine Kerr coefficients
             chis = [[0]*N for _ in range(N)]
             chips = [[0]*N for _ in range(N)]
-            if len(f_qubit[0]) > 2:
 
-                for i in range(N):
-                    for j in range(i, N):
-                        if i == qubit_mode_ind and j == qubit_mode_ind:
-                                fs = f_qubit[1][2]
-                        elif i == qubit_mode_ind or j == qubit_mode_ind:
-                            if i == qubit_mode_ind:
-                                fs = a_m[j]*f_qubit[1][1]
-                            else:
-                                fs = a_m[i]*f_qubit[1][1]
+            for i in range(N):
+                for j in range(i, N):
+                    if i == qubit_mode_ind and j == qubit_mode_ind:
+                        if len(f_qubit[0]) > 2:
+                            fs = f_qubit[1][2]
+                            ev, evec = closest_state_to(fs)
+                            chi = (ev - (f1s[i] + f1s[j]))
+                            chis[i][j] = chi # found qubit anharmonicity
                         else:
-                            fs = a_m[i]*a_m[j]*psi_0
-
+                            chis[i][j] = 0
+                    elif i == qubit_mode_ind or j == qubit_mode_ind:
+                        if i == qubit_mode_ind:
+                            if len(f_qubit[0]) > 1:
+                                fs = a_m[j]*f_qubit[1][1]
+                                ev, evec = closest_state_to(fs)
+                                chi = (ev - (f1s[i] + f1s[j]))
+                                chis[i][j] = chi # found cross-Kerr (dispersive shift)
+                                chis[j][i] = chi 
+                            else:
+                                chis[i][j] = 0
+                        else:
+                            if len(f_qubit[0]) > 1:
+                                fs = a_m[i]*f_qubit[1][1]
+                                ev, evec = closest_state_to(fs)
+                                chi = (ev - (f1s[i] + f1s[j]))
+                                chis[i][j] = chi # found cross-Kerr (dispersive shift)
+                                chis[j][i] = chi 
+                            else:
+                                chis[i][j] = 0
+                    else:
+                        fs = a_m[i]*a_m[j]*psi_0
                         ev, evec = closest_state_to(fs)
                         chi = (ev - (f1s[i] + f1s[j]))
-                        chis[i][j] = chi
-                        chis[j][i] = chi
-
-                        if chi_prime:
-                            d[j] += 1
-                            fs = fock_state_on(d)
-                            ev, evec = closest_state_to(fs)
-                            chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
-                            chips[i][j] = chip
-                            chips[j][i] = chip
+                        chis[i][j] = chi # found resonator anharmonicity
+                    
+                    if chi_prime:
+                        d[j] += 1
+                        fs = fock_state_on(d)
+                        ev, evec = closest_state_to(fs)
+                        chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
+                        chips[i][j] = chip
+                        chips[j][i] = chip
 
         else:
             print('Multiple junctions -- assuming transmons/harmonics oscillators only')
