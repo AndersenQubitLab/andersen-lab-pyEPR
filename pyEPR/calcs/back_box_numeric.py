@@ -359,43 +359,46 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             for i in N_HO: # looping through all resonator modes
                 a_m[i] = tensor_out(qutip.create(fock_trunc),i) # create an annihilation operator for the harmonic mode at index i.
 
-
+    
             # Determine 0-1 frequencies for each mode
-            f1s = [[0] for _ in range(N)]
+            f1s = [0 for _ in range(N)]
             for i in range(N):
                 if i == qubit_mode_ind:
-                    f1s[i] = f_qubit[0][1] - f_qubit[0][0]
+                    if len(f_qubit[0]) > 2:
+                        f1s[i] = f_qubit[0][1] - f_qubit[0][0]
                 else:
                     f1s[i] = closest_state_to(a_m[i]*psi_0)[0]
 
             # Determine Kerr coefficients
             chis = [[0]*N for _ in range(N)]
             chips = [[0]*N for _ in range(N)]
+            if len(f_qubit[0]) > 2:
 
-            for i in range(N):
-                for j in range(i, N):
-                    if i == qubit_mode_ind and j == qubit_mode_ind:
-                        fs = f_qubit[1][2]
-                    elif i == qubit_mode_ind or j == qubit_mode_ind:
-                        if i == qubit_mode_ind:
-                            fs = a_m[j]*f_qubit[1][1]
+                for i in range(N):
+                    for j in range(i, N):
+                        if i == qubit_mode_ind and j == qubit_mode_ind:
+                                fs = f_qubit[1][2]
+                        elif i == qubit_mode_ind or j == qubit_mode_ind:
+                            if i == qubit_mode_ind:
+                                fs = a_m[j]*f_qubit[1][1]
+                            else:
+                                fs = a_m[i]*f_qubit[1][1]
                         else:
-                            fs = a_m[i]*f_qubit[1][1]
-                    else:
-                        fs = a_m[i]*a_m[j]*psi_0
+                            fs = a_m[i]*a_m[j]*psi_0
 
-                    ev, evec = closest_state_to(fs)
-                    chi = (ev - (f1s[i] + f1s[j]))
-                    chis[i][j] = chi
-                    chis[j][i] = chi
-
-                    if chi_prime:
-                        d[j] += 1
-                        fs = fock_state_on(d)
                         ev, evec = closest_state_to(fs)
-                        chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
-                        chips[i][j] = chip
-                        chips[j][i] = chip
+                        chi = (ev - (f1s[i] + f1s[j]))
+                        chis[i][j] = chi
+                        chis[j][i] = chi
+
+                        if chi_prime:
+                            d[j] += 1
+                            fs = fock_state_on(d)
+                            ev, evec = closest_state_to(fs)
+                            chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
+                            chips[i][j] = chip
+                            chips[j][i] = chip
+
         else:
             print('Multiple junctions -- assuming transmons/harmonics oscillators only')
             f1s = [closest_state_to(fock_state_on({i: 1}))[0] for i in range(N)]
