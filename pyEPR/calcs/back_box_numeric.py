@@ -335,7 +335,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
         if fzpfs_shape[1] == 1:
             print('Single junctions -- assuming single qubit mode')
             # Distinguish the qubit mode from the resonator modes
-            qubit_mode_ind = int(np.argmax(fzpfs[:,0]))  # Find the index of the highest zero-point fluctuation mode (qubit mode)
+            qubit_mode_ind = int(np.argmax(abs(fzpfs[:,0])))  # Find the index of the highest zero-point fluctuation mode (qubit mode)
             N_HO = [i for i in range(N) if i != qubit_mode_ind]  # Create a list of indices representing the resonator modes
 
             psi_0 = evecs[0]  # save ground state |0,0,0>
@@ -350,7 +350,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 # and eigenstate associated with fluxonium excitations in the f_qubit list.
             for i in range(fock_trunc): 
                 distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-                if distance > 0.8:
+                if distance > 0.5:
                     f_qubit[0].append(evals[i])
                     f_qubit[1].append(evecs[i])
                     
@@ -491,8 +491,10 @@ def black_box_hamiltonian_nq(freqs, zmat, ljs, cos_trunc=6, fock_trunc=8, show_f
     # Take signs with respect to first port
     zsigns = np.sign(zmat[zeros, 0, :])
     fzpfs = zsigns.transpose() * np.sqrt(hbar * abs(zeffs) / 2)
+    # fzpfs = [abs(x) for x in fzpfs]
 
     H = black_box_hamiltonian(f0s, ljs, fzpfs, cos_trunc, fock_trunc)
+    
     return make_dispersive(H, fock_trunc, fzpfs, f0s)
 
 black_box_hamiltonian_nq = black_box_hamiltonian_nq
