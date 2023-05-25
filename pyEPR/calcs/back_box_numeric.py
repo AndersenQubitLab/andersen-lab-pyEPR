@@ -336,6 +336,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             print('Single junctions -- assuming single qubit mode')
             # Distinguish the qubit mode from the resonator modes
             qubit_mode_ind = int(np.argmax(abs(fzpfs[:,0])))  # Find the index of the highest zero-point fluctuation mode (qubit mode)
+
             N_HO = [i for i in range(N) if i != qubit_mode_ind]  # Create a list of indices representing the resonator modes
 
             psi_0 = evecs[0]  # save ground state |0,0,0>
@@ -350,7 +351,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 # and eigenstate associated with fluxonium excitations in the f_qubit list.
             for i in range(fock_trunc): 
                 distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-                if distance > 0.5:
+                if distance > 0.9:
                     f_qubit[0].append(evals[i])
                     f_qubit[1].append(evecs[i])
                     
@@ -384,24 +385,17 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                         else:
                             chis[i][j] = 0
                     elif i == qubit_mode_ind or j == qubit_mode_ind:
-                        if i == qubit_mode_ind:
-                            if len(f_qubit[0]) > 1:
-                                fs = a_m[j]*f_qubit[1][1]
-                                ev, evec = closest_state_to(fs)
-                                chi = (ev - (f1s[i] + f1s[j]))
-                                chis[i][j] = chi # found cross-Kerr (dispersive shift)
-                                chis[j][i] = chi 
+                        if len(f_qubit[0]) > 1:
+                            if i == qubit_mode_ind:
+                                fs = a_m[j] * f_qubit[1][1]
                             else:
-                                chis[i][j] = 0
+                                fs = a_m[i] * f_qubit[1][1]
+                            ev, evec = closest_state_to(fs)
+                            chi = ev - (f1s[i] + f1s[j])
+                            chis[i][j] = chi  # found cross-Kerr (dispersive shift)
+                            chis[j][i] = chi
                         else:
-                            if len(f_qubit[0]) > 1:
-                                fs = a_m[i]*f_qubit[1][1]
-                                ev, evec = closest_state_to(fs)
-                                chi = (ev - (f1s[i] + f1s[j]))
-                                chis[i][j] = chi # found cross-Kerr (dispersive shift)
-                                chis[j][i] = chi 
-                            else:
-                                chis[i][j] = 0
+                            chis[i][j] = 0
                     else:
                         fs = a_m[i]*a_m[j]*psi_0
                         ev, evec = closest_state_to(fs)
