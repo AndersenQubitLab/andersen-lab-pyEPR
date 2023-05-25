@@ -684,13 +684,14 @@ class QuantumAnalysis(object):
 
         # Numerical diag
         if cos_trunc is not None:
-            f1_ND, CHI_ND = epr_numerical_diagonalization(freqs_hfss,
+            f1_ND, CHI_ND, Hamiltonian = epr_numerical_diagonalization(freqs_hfss,
                                                           Ljs,
                                                           PHI_zpf,
                                                           cos_trunc=cos_trunc,
                                                           fock_trunc=fock_trunc,
                                                           flux=flux,
-                                                          basis=basis)
+                                                          basis=basis,
+                                                          return_H=True)
         else:
             f1_ND, CHI_ND = None, None
 
@@ -700,6 +701,7 @@ class QuantumAnalysis(object):
         result['f_ND'] = pd.Series(f1_ND)*1E-6  # MHz
         result['chi_O1'] = pd.DataFrame(CHI_O1)
         result['chi_ND'] = pd.DataFrame(CHI_ND)   # why dataframe?
+        result['Hamiltonian'] = Hamiltonian
         result['ZPF'] = PHI_zpf
         result['Pm_normed'] = PJ
         try:
@@ -1017,7 +1019,11 @@ class QuantumAnalysis(object):
             columns: variation label
         """
         label = 'f_ND' if numeric else 'f_1'
-        return self.results.vs_variations(label, vs=swp_variable, to_dataframe=True, variations=variations)
+        return self.results.vs_variations(label, vs=swp_variable, to_dataframe=False, variations=variations)
+
+    def get_hamiltonian(self, swp_variable='variation', numeric=True, variations: list = None):
+        label = 'Hamiltonian'
+        return self.results.vs_variations(label, vs=swp_variable, to_dataframe=False, variations=variations)
 
     def get_quality_factors(self, swp_variable='variation', variations: list = None):
         """return as pd.Series
