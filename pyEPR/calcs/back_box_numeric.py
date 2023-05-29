@@ -342,18 +342,33 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             psi_0 = evecs[0]  # save ground state |0,0,0>
             rho_0 = psi_0.ptrace(N_HO)  # trace out qubit mode
 
-            f_qubit = [[],[]]
+            # f_qubit = [[],[]]
     
             # Save the modes and frequencies that correspond to fluxonium excitations.
                 # this code segment iterates over the possible indices of eigenstates and eigenvalues. 
                 # It calculates the distance between the density matrix and each eigenstate, 
                 # and if the distance exceeds a threshold, it saves the corresponding eigenvalue
                 # and eigenstate associated with fluxonium excitations in the f_qubit list.
-            for i in range(fock_trunc): 
-                distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-                if distance > 0.9:
-                    f_qubit[0].append(evals[i])
-                    f_qubit[1].append(evecs[i])
+            for distance in np.linspace(0.6,0.8,7)[-2:0:-1]:
+                f_qubit = [[],[]]
+                for i in range(fock_trunc): 
+                    fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
+                    if fidelity > distance:
+                        f_qubit[0].append(evals[i])
+                        f_qubit[1].append(evecs[i])
+                if len(f_qubit[0])>2:
+                    print(f'The fidelity for all found states and the approximated states is larger than: {distance}.')
+                    break
+            
+            def validate_excitation_identification(f_qubit):
+                if len(f_qubit[0]) <= 2:
+                    raise ValueError("No close qubit states found in the specified fidelity range, check modes at zero flux bias")
+
+            try:
+                validate_excitation_identification(f_qubit)
+            except ValueError as e:
+                print(f"Invalid input: {str(e)}")
+                raise e
                     
             # Define list with all harmonic mode creation operator
             a_m = [[0] for _ in range(N)]
@@ -365,8 +380,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             f1s = [0 for _ in range(N)]
             for i in range(N):
                 if i == qubit_mode_ind:
-                    if len(f_qubit[0]) > 2:
-                        f1s[i] = f_qubit[0][1] - f_qubit[0][0]
+                    f1s[i] = f_qubit[0][1] - f_qubit[0][0]
                 else:
                     f1s[i] = closest_state_to(a_m[i]*psi_0)[0]
 
@@ -377,31 +391,20 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             for i in range(N):
                 for j in range(i, N):
                     if i == qubit_mode_ind and j == qubit_mode_ind:
-                        if len(f_qubit[0]) > 2:
-                            fs = f_qubit[1][2]
-                            ev, evec = closest_state_to(fs)
-                            chi = (ev - (f1s[i] + f1s[j]))
-                            chis[i][j] = chi # found qubit anharmonicity
-                        else:
-                            chis[i][j] = 0
+                        fs = f_qubit[1][2] # found second excitation of qubit mode, used to calculate qubit anharmonicity
                     elif i == qubit_mode_ind or j == qubit_mode_ind:
-                        if len(f_qubit[0]) > 1:
-                            if i == qubit_mode_ind:
-                                fs = a_m[j] * f_qubit[1][1]
-                            else:
-                                fs = a_m[i] * f_qubit[1][1]
-                            ev, evec = closest_state_to(fs)
-                            chi = ev - (f1s[i] + f1s[j])
-                            chis[i][j] = chi  # found cross-Kerr (dispersive shift)
-                            chis[j][i] = chi
+                        if i == qubit_mode_ind:
+                            fs = a_m[j]*f_qubit[1][1] # Found |1>q|1>r, used to calculate Cross-Kerr coefficient
                         else:
-                            chis[i][j] = 0
+                            fs = a_m[i]*f_qubit[1][1]
                     else:
-                        fs = a_m[i]*a_m[j]*psi_0
-                        ev, evec = closest_state_to(fs)
-                        chi = (ev - (f1s[i] + f1s[j]))
-                        chis[i][j] = chi # found resonator anharmonicity
-                    
+                        fs = a_m[i]*a_m[j]*psi_0 # found second excitation of resonator mode, used to calculate resonator anharmonicity
+
+                    ev, evec = closest_state_to(fs)
+                    chi = (ev - (f1s[i] + f1s[j]))
+                    chis[i][j] = chi
+                    chis[j][i] = chi
+
                     if chi_prime:
                         d[j] += 1
                         fs = fock_state_on(d)
