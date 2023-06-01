@@ -349,17 +349,50 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 # It calculates the distance between the density matrix and each eigenstate, 
                 # and if the distance exceeds a threshold, it saves the corresponding eigenvalue
                 # and eigenstate associated with fluxonium excitations in the f_qubit list.
-            for distance in np.linspace(0.6,0.8,7)[-2:0:-1]:
-                f_qubit = [[],[]]
-                for i in range(fock_trunc): 
-                    fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-                    if fidelity > distance:
-                        f_qubit[0].append(evals[i])
-                        f_qubit[1].append(evecs[i])
-                if len(f_qubit[0])>2:
-                    print(f'The fidelity for all found states and the approximated states is larger than: {distance}.')
-                    break
+            fidelity_list = []
+            # for distance in np.linspace(0.5,1.0,20)[-2:0:-1]:
+            #     f_qubit = [[],[]]
+            #     for i in range(fock_trunc): 
+            #         fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
+            #         if fidelity > distance:
+            #             f_qubit[0].append(evals[i])
+            #             f_qubit[1].append(evecs[i])
+            #     if len(f_qubit[0])>2:
+            #         print(f'The fidelity for all found states and the approximated states is larger than: {distance}.')
+            #         break
+
+            f_qubit = [[],[]]
+            for i in range(fock_trunc**N): 
+                fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
+                fidelity_list.append(fidelity)
             
+            # Initialize a list to store the biggest elements and their indices, up to fock_trunc
+            biggest_elements = []
+
+            for i, element in enumerate(fidelity_list):
+                if len(biggest_elements) < fock_trunc:
+                    biggest_elements.append((element, i))
+                    biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
+                else:
+                    if element > biggest_elements[-1][0]:
+                        biggest_elements[-1] = (element, i)
+                        biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
+
+            # Print the five biggest elements and their indices
+            print("The biggest elements in the fidelity list are:")
+            index_list = []
+            print(biggest_elements[0])
+            for element, index in biggest_elements:
+                print(f"Element: {element}, Index: {index}")
+                index_list.append(index)
+
+            index_list_sorted = sorted(index_list)
+            f_qubit[0].extend([evals[i] for i in index_list_sorted])
+            f_qubit[1].extend([evecs[i] for i in index_list_sorted])
+
+            print(f_qubit[0])
+
+
             def validate_excitation_identification(f_qubit):
                 if len(f_qubit[0]) <= 2:
                     raise ValueError("No close qubit states found in the specified fidelity range, check modes at zero flux bias")
@@ -370,6 +403,8 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 print(f"Invalid input: {str(e)}")
                 raise e
                     
+
+
             # Define list with all harmonic mode creation operator
             a_m = [[0] for _ in range(N)]
             for i in N_HO: # looping through all resonator modes
