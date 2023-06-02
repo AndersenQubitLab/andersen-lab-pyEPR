@@ -379,31 +379,25 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                         biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
 
             # Print the five biggest elements and their indices
+            sorted_biggest_elements = sorted(biggest_elements, key=lambda x: x[1])
             print("The biggest elements in the fidelity list are:")
-            index_list = []
-            print(biggest_elements[0])
-            for element, index in biggest_elements:
+            for element, index in sorted_biggest_elements:
                 print(f"Element: {element}, Index: {index}")
-                index_list.append(index)
+                # Save the modes and frequencies that correspond to fluxonium excitations.
+                f_qubit[0].append(evals[index])
+                f_qubit[1].append(evecs[index])
 
-            index_list_sorted = sorted(index_list)
-            f_qubit[0].extend([evals[i] for i in index_list_sorted])
-            f_qubit[1].extend([evecs[i] for i in index_list_sorted])
-
-            print(f_qubit[0])
-
-
-            def validate_excitation_identification(f_qubit):
-                if len(f_qubit[0]) <= 2:
-                    raise ValueError("No close qubit states found in the specified fidelity range, check modes at zero flux bias")
+            # Sanity check 
+            # make sure the fidelity of the found states to the approximate states are larger than 0.5
+            def validate_excitation_identification(fidelity):
+                if fidelity <= 0.5:
+                    raise ValueError("No close qubit states up to the second excited states, check modes at zero flux bias")
 
             try:
-                validate_excitation_identification(f_qubit)
+                validate_excitation_identification(sorted_biggest_elements[2][0])
             except ValueError as e:
                 print(f"Invalid input: {str(e)}")
-                raise e
-                    
-
+                raise e    
 
             # Define list with all harmonic mode creation operator
             a_m = [[0] for _ in range(N)]
