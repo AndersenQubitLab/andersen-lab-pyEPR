@@ -342,33 +342,19 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             psi_0 = evecs[0]  # save ground state |0,0,0>
             rho_0 = psi_0.ptrace(N_HO)  # trace out qubit mode
 
-            # f_qubit = [[],[]]
-    
             # Save the modes and frequencies that correspond to fluxonium excitations.
-                # this code segment iterates over the possible indices of eigenstates and eigenvalues. 
-                # It calculates the distance between the density matrix and each eigenstate, 
-                # and if the distance exceeds a threshold, it saves the corresponding eigenvalue
-                # and eigenstate associated with fluxonium excitations in the f_qubit list.
+                    # this code segment iterates over the entire Hilbert space of the coupled system. 
+                    # It calculates the distance between the approximated state of |n>q|0>r and each eigenstate, 
+                    # and picks out the fisrt #fock_trunc states that gives the highest fidelity, 
+                    # it then ranks them based on the magnitude of corresponding eigenvalues and
+                    # saves both the eigenvalue and eigenstate associated with fluxonium excitations in the f_qubit list.
             fidelity_list = []
-            # for distance in np.linspace(0.5,1.0,20)[-2:0:-1]:
-            #     f_qubit = [[],[]]
-            #     for i in range(fock_trunc): 
-            #         fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
-            #         if fidelity > distance:
-            #             f_qubit[0].append(evals[i])
-            #             f_qubit[1].append(evecs[i])
-            #     if len(f_qubit[0])>2:
-            #         print(f'The fidelity for all found states and the approximated states is larger than: {distance}.')
-            #         break
-
             f_qubit = [[],[]]
             for i in range(fock_trunc**N): 
-                fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # finds the eigenstate where is resonator part is close to 0
+                fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # calculates the fidelity of the eigenstate to an approximated state where is resonator part is close to ground state
                 fidelity_list.append(fidelity)
             
-            # Initialize a list to store the biggest elements and their indices, up to fock_trunc
-            biggest_elements = []
-
+            biggest_elements = [] # Initialize a list to store the biggest fidelity and their indices, up to fock_trunc
             for i, element in enumerate(fidelity_list):
                 if len(biggest_elements) < fock_trunc:
                     biggest_elements.append((element, i))
@@ -378,7 +364,6 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                         biggest_elements[-1] = (element, i)
                         biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
 
-            # Print the five biggest elements and their indices
             sorted_biggest_elements = sorted(biggest_elements, key=lambda x: x[1])
             print("The biggest elements in the fidelity list are:")
             for element, index in sorted_biggest_elements:
@@ -387,14 +372,16 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                 f_qubit[0].append(evals[index])
                 f_qubit[1].append(evecs[index])
 
-            # Sanity check 
-            # make sure the fidelity of the found states to the approximate states are larger than 0.5
-            def validate_excitation_identification(fidelity):
-                if fidelity <= 0.5:
-                    raise ValueError("No close qubit states up to the second excited states, check modes at zero flux bias")
+            # Sanity check to make sure the fidelity of the found lowest 3 states to the approximate states are larger than 0.5
+            def validate_excitation_identification(fidelity_list):
+                fidelity_min = np.min(fidelity_list)
+                if fidelity_min <= 0.5:
+                    raise ValueError("No close qubit states found up to the second excited states, check modes at zero flux bias")
 
+            fidelity_list = np.array([x[0] for x in sorted_biggest_elements[:3]])
+            
             try:
-                validate_excitation_identification(sorted_biggest_elements[2][0])
+                validate_excitation_identification(fidelity_list)
             except ValueError as e:
                 print(f"Invalid input: {str(e)}")
                 raise e    
