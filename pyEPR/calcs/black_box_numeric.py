@@ -70,7 +70,7 @@ def epr_numerical_diagonalization(freqs, Ljs, ϕzpf,
     
     if basis == 'HO':
         print('Using Full Cosine Potential')
-        Hs = black_box_hamiltonian_HO_basis(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
+        Hs = black_box_hamiltonian_HO_basis(freqs * 1E9, Ljs.astype(float), fluxQ*ϕzpf,
                  fock_trunc, flux, individual=use_1st_order)
     else:
         print('Using taylor expansion')
@@ -341,7 +341,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             # Save the modes and frequencies that correspond to fluxonium excitations.
             for i in range(fock_trunc):
                 distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr()
-                if distance > 0.9:
+                if distance > 0.6:
                     f_qubit[0].append(evals[i])
                     f_qubit[1].append(evecs[i])
 

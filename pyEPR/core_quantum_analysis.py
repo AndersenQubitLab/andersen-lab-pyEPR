@@ -28,7 +28,7 @@ from numpy.linalg import inv
 # pyEPR custom imports
 from . import Dict, config, logger
 from .ansys import ureg
-from .calcs.back_box_numeric import epr_numerical_diagonalization
+from .calcs.black_box_numeric import epr_numerical_diagonalization
 from .calcs.basic import CalcsBasic
 from .calcs.constants import Planck, fluxQ
 from .core_distributed_analysis import DistributedAnalysis
