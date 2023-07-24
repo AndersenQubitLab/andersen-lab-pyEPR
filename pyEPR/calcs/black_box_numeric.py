@@ -70,7 +70,7 @@ def epr_numerical_diagonalization(freqs, Ljs, ϕzpf,
     
     if basis == 'HO':
         print('Using Full Cosine Potential')
-        Hs = black_box_hamiltonian_HO_basis(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
+        Hs = black_box_hamiltonian_HO_basis(freqs * 1E9, Ljs.astype(float), fluxQ*ϕzpf,
                  fock_trunc, flux, individual=use_1st_order)
     else:
         print('Using taylor expansion')
