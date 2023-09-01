@@ -399,6 +399,13 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                     f1s[i] = f_qubit[0][1] - f_qubit[0][0]
                 else:
                     f1s[i] = closest_state_to(a_m[i]*psi_0)[0]
+            # ### add the higher energy levels of the qubit
+            f1s.append(f_qubit[0][0])
+            f1s.append(f_qubit[0][1])
+            f1s.append(f_qubit[0][2])
+            f1s.append(f_qubit[0][3])
+            f1s.append(f_qubit[0][4])
+            
 
             # Determine Kerr coefficients
             chis = [[0]*N for _ in range(N)]
