@@ -74,7 +74,7 @@ def epr_numerical_diagonalization(freqs, Ljs, ϕzpf,
                  fock_trunc, flux, individual=use_1st_order)
     else:
         print('Using taylor expansion')
-        Hs = black_box_hamiltonian(freqs * 1E9, Ljs.astype(np.float), fluxQ*ϕzpf,
+        Hs = black_box_hamiltonian(freqs * 1E9, Ljs.astype(float), fluxQ*ϕzpf,
                  cos_trunc, fock_trunc, individual=use_1st_order)
     
     f_ND, χ_ND, _, _ = make_dispersive(
@@ -229,8 +229,15 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
     Output:
         Return dressed mode frequencies, chis, chi prime, phi_zpf flux (not reduced), and linear frequencies
     Description:
-        Takes the Hamiltonian matrix `H` from bbq_hmt. It them finds the eigenvalues/eigenvectors and  assigns quantum numbers to them --- i.e., mode excitations,  such as, for instance, for three mode, :math:`|0,0,0\rangle` or :math:`|0,0,1\rangle`, which correspond to no excitations in any of the modes or one excitation in the 3rd mode, resp.    The assignment is performed based on the maximum overlap between the eigenvectors of H_full and H_lin.   If this crude explanation is confusing, let me know, I will write a more detailed one |:slightly_smiling_face:|
-        Based on the assignment of the excitations, the function returns the dressed mode frequencies :math:`\omega_m^\prime`, and the cross-Kerr matrix (including anharmonicities) extracted from the numerical diagonalization, as well as from 1st order perturbation theory.
+        Takes the Hamiltonian matrix `H` from bbq_hmt. It them finds the eigenvalues/eigenvectors and  
+        assigns quantum numbers to them --- i.e., mode excitations,  such as, for instance, for three mode, 
+        :math:`|0,0,0\rangle` or :math:`|0,0,1\rangle`, which correspond to no excitations in any of the modes 
+        or one excitation in the 3rd mode, resp.    The assignment is performed based on the maximum overlap between 
+        the eigenvectors of H_full and H_lin.   If this crude explanation is confusing, let me know, I will write a 
+        more detailed one |:slightly_smiling_face:|
+        Based on the assignment of the excitations, the function returns the dressed mode frequencies :math:`\omega_m^\prime`, 
+        and the cross-Kerr matrix (including anharmonicities) extracted from the numerical diagonalization, as well as 
+        from 1st order perturbation theory.
         Note, the diagonal of the CHI matrix is directly the anharmonicity term.
 
         This is a modified method that works for a single qubit, with arbirtrary harmonic oscillator-like modes
@@ -243,14 +250,15 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
             H) == qutip.qobj.Qobj, "Please pass in either a list of Qobjs or Qobj for the Hamiltonian"
 
     print("Starting the diagonalization")
-    evals, evecs = H.eigenstates()
+    evals, evecs = H.eigenstates() # Diagonalize Hamiltonian matrix
     print("Finished the diagonalization")
-    evals -= evals[0]
+    evals -= evals[0] # subtract ground state energy
 
     N = int(np.round(np.log(H.shape[0])/np.log(fock_trunc)))  # number of modes
     assert H.shape[0] == fock_trunc ** N
     
-    if N == 1:
+    # Find number of linear modes and distinguish trivial case N=1
+    if N == 1: 
         f1s = [evals[1] - evals[0]]
         chis = [(evals[2] - evals[1]) - (evals[1] - evals[0])]
 
@@ -326,48 +334,94 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
         print(fzpfs_shape)
         if fzpfs_shape[1] == 1:
             print('Single junctions -- assuming single qubit mode')
-            qubit_mode_ind = int(np.argmax(fzpfs[:,0]))  # find qubit mode
-            N_HO = [i for i in range(N) if i != qubit_mode_ind]  # harmonic oscillator modes indices
+            # Distinguish the qubit mode from the resonator modes
+            qubit_mode_ind = int(np.argmax(abs(fzpfs[:,0])))  # Find the index of the highest zero-point fluctuation mode (qubit mode)
+
+            N_HO = [i for i in range(N) if i != qubit_mode_ind]  # Create a list of indices representing the resonator modes
 
             psi_0 = evecs[0]  # save ground state |0,0,0>
-            rho_0 = psi_0.ptrace(N_HO)  # ground state density matrix traced over all resonator like modes
-
-            # Define list with all harmonic mode creation operator
-            f_qubit = [[],[]]
-            a_m = [[0] for _ in range(N)]
-            for i in N_HO:
-                a_m[i] = tensor_out(qutip.create(fock_trunc),i)
+            rho_0 = psi_0.ptrace(N_HO)  # trace out qubit mode
 
             # Save the modes and frequencies that correspond to fluxonium excitations.
-            for i in range(fock_trunc):
-                distance = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr()
-                if distance > 0.6:
-                    f_qubit[0].append(evals[i])
-                    f_qubit[1].append(evecs[i])
+                    # this code segment iterates over the entire Hilbert space of the coupled system. 
+                    # It calculates the distance between the approximated state of |n>q|0>r and each eigenstate, 
+                    # and picks out the fisrt #fock_trunc states that gives the highest fidelity, 
+                    # it then ranks them based on the magnitude of corresponding eigenvalues and
+                    # saves both the eigenvalue and eigenstate associated with fluxonium excitations in the f_qubit list.
+            fidelity_list = []
+            f_qubit = [[],[]]
+            for i in range(fock_trunc**N): 
+                fidelity = (rho_0.dag() * evecs[i].ptrace(N_HO)).tr() # calculates the fidelity of the eigenstate to an approximated state where is resonator part is close to ground state
+                fidelity_list.append(fidelity)
+            
+            biggest_elements = [] # Initialize a list to store the biggest fidelity and their indices, up to fock_trunc
+            for i, element in enumerate(fidelity_list):
+                if len(biggest_elements) < fock_trunc:
+                    biggest_elements.append((element, i))
+                    biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
+                else:
+                    if element > biggest_elements[-1][0]:
+                        biggest_elements[-1] = (element, i)
+                        biggest_elements.sort(reverse=True)  # Sort in descending order based on element value
 
+            sorted_biggest_elements = sorted(biggest_elements, key=lambda x: x[1])
+            print("The biggest elements in the fidelity list are:")
+            for element, index in sorted_biggest_elements:
+                print(f"Element: {element}, Index: {index}")
+                # Save the modes and frequencies that correspond to fluxonium excitations.
+                f_qubit[0].append(evals[index])
+                f_qubit[1].append(evecs[index])
+
+            # Sanity check to make sure the fidelity of the found lowest 3 states to the approximate states are larger than 0.5
+            def validate_excitation_identification(fidelity_list):
+                fidelity_min = np.min(fidelity_list)
+                if fidelity_min <= 0.5:
+                    raise ValueError("No close qubit states found up to the second excited states, check modes at zero flux bias")
+
+            fidelity_list = np.array([x[0] for x in sorted_biggest_elements[:3]])
+            
+            try:
+                validate_excitation_identification(fidelity_list)
+            except ValueError as e:
+                print(f"Invalid input: {str(e)}")
+                raise e    
+
+            # Define list with all harmonic mode creation operator
+            a_m = [[0] for _ in range(N)]
+            for i in N_HO: # looping through all resonator modes
+                a_m[i] = tensor_out(qutip.create(fock_trunc),i) # create an annihilation operator for the harmonic mode at index i.
+
+    
             # Determine 0-1 frequencies for each mode
-            f1s = [[0] for _ in range(N)]
+            f1s = [0 for _ in range(N)]
             for i in range(N):
                 if i == qubit_mode_ind:
                     f1s[i] = f_qubit[0][1] - f_qubit[0][0]
                 else:
                     f1s[i] = closest_state_to(a_m[i]*psi_0)[0]
+            # ### add the higher energy levels of the qubit
+            f1s.append(f_qubit[0][0])
+            f1s.append(f_qubit[0][1])
+            f1s.append(f_qubit[0][2])
+            f1s.append(f_qubit[0][3])
+            f1s.append(f_qubit[0][4])
+            
 
-
+            # Determine Kerr coefficients
             chis = [[0]*N for _ in range(N)]
             chips = [[0]*N for _ in range(N)]
 
             for i in range(N):
                 for j in range(i, N):
                     if i == qubit_mode_ind and j == qubit_mode_ind:
-                        fs = f_qubit[1][2]
+                        fs = f_qubit[1][2] # found second excitation of qubit mode, used to calculate qubit anharmonicity
                     elif i == qubit_mode_ind or j == qubit_mode_ind:
                         if i == qubit_mode_ind:
-                            fs = a_m[j]*f_qubit[1][1]
+                            fs = a_m[j]*f_qubit[1][1] # Found |1>q|1>r, used to calculate Cross-Kerr coefficient
                         else:
                             fs = a_m[i]*f_qubit[1][1]
                     else:
-                        fs = a_m[i]*a_m[j]*psi_0
+                        fs = a_m[i]*a_m[j]*psi_0 # found second excitation of resonator mode, used to calculate resonator anharmonicity
 
                     ev, evec = closest_state_to(fs)
                     chi = (ev - (f1s[i] + f1s[j]))
@@ -381,6 +435,7 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                         chip = (ev - (f1s[i] + 2*f1s[j]) - 2 * chis[i][j])
                         chips[i][j] = chip
                         chips[j][i] = chip
+
         else:
             print('Multiple junctions -- assuming transmons/harmonics oscillators only')
             f1s = [closest_state_to(fock_state_on({i: 1}))[0] for i in range(N)]
@@ -456,8 +511,10 @@ def black_box_hamiltonian_nq(freqs, zmat, ljs, cos_trunc=6, fock_trunc=8, show_f
     # Take signs with respect to first port
     zsigns = np.sign(zmat[zeros, 0, :])
     fzpfs = zsigns.transpose() * np.sqrt(hbar * abs(zeffs) / 2)
+    # fzpfs = [abs(x) for x in fzpfs]
 
     H = black_box_hamiltonian(f0s, ljs, fzpfs, cos_trunc, fock_trunc)
+    
     return make_dispersive(H, fock_trunc, fzpfs, f0s)
 
 black_box_hamiltonian_nq = black_box_hamiltonian_nq
