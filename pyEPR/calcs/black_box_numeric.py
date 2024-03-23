@@ -6,6 +6,8 @@ extraction.
 
 Original code on black_box_hamiltonian and make_dispersive functions by Phil Reinhold
 Revisions and updates by Zlatko Minev & Lysander Christakis
+
+This version is by AndersenLab TODO: fix this part!
 '''
 # pylint: disable=invalid-name
 
@@ -424,6 +426,8 @@ def make_dispersive(H, fock_trunc, fzpfs=None, f0s=None, chi_prime=False,
                         fs = a_m[i]*a_m[j]*psi_0 # found second excitation of resonator mode, used to calculate resonator anharmonicity
 
                     ev, evec = closest_state_to(fs)
+                    print(f1s[i],f1s[j])
+                    print(ev)
                     chi = (ev - (f1s[i] + f1s[j]))
                     chis[i][j] = chi
                     chis[j][i] = chi
