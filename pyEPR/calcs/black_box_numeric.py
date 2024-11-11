@@ -7,7 +7,7 @@ extraction.
 Original code on black_box_hamiltonian and make_dispersive functions by Phil Reinhold
 Revisions and updates by Zlatko Minev & Lysander Christakis
 
-This version is by AndersenLab TODO: fix this part!
+This extended EPR version has been developed by the Andersen Lab, QuTech, TU Delft. 
 '''
 # pylint: disable=invalid-name
 
